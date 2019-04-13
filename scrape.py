@@ -13,21 +13,19 @@ def _get_courses():
     soup = BeautifulSoup(page.content, 'html.parser')
     course_blocks = soup.find_all(class_='course-block')
     
-    df = pd.DataFrame([], columns=['Name', 'Type', 'Description', 'Link'])
+    data = {}
     for course in course_blocks:
-        name = str(list(course.children)[1].find(class_='course-block__title').get_text())
-        desc = str(list(course.children)[1].find(class_='course-block__description').get_text())[11:].replace('\n', '')
-        link = 'https://www.datacamp.com' + str(list(course.children)[1].get('href'))
-        type_ = str(list(course.children)[1].find_all('div',
-            class_= lambda value: value and value.startswith(
-                'course-block__technology'))[0]).replace(
-                        '<div class=\"course-block__technology course-block__technology--', '').replace(
-                                '\"></div>', '')
-                         # Okay, this is pretty bad but it
-                         # means I don't have to import re at least
+        info_block = course.find(class_=lambda value: value.startswith('course-block__link'))
+        name = info_block.find(class_='course-block__title').get_text()
+        desc = info_block.find(class_='course-block__description').get_text().strip()
+        link = 'https://www.datacamp.com' + info_block.get('href')
+        tech_tag = info_block.find('div', class_=lambda value: value.startswith('course-block__technology'))
+        technology = tech_tag.get('class')[1].replace('course-block__technology','').replace('-','')
+        data_id = int(info_block.parent.parent.get('data-id'))
 
-        df = df.append(pd.DataFrame([[name, type_, desc, link]], columns=['Name', 'Type', 'Description', 'Link']))
-    return df.reset_index(drop=True)
+        data[data_id] = [name, technology, desc, link]
+
+    return pd.DataFrame.from_dict(data, orient='index', columns=['Name', 'Technology', 'Description', 'Link'])
 
 
 def update_progress():
