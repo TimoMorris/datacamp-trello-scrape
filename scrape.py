@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 from trello import TrelloClient
 from bs4 import BeautifulSoup
+import re
 
 
 def _get_courses():
@@ -11,21 +12,30 @@ def _get_courses():
     if status != '200':
         return
     soup = BeautifulSoup(page.content, 'html.parser')
-    course_blocks = soup.find_all(class_='course-block')
+    courses_explore_section = soup.find(class_=re.compile('^courses__explore'))
+    course_blocks = courses_explore_section.find_all(class_='course-block')
+    print(f'{len(course_blocks)} courses found')
     
     data = {}
     for course in course_blocks:
-        info_block = course.find(class_=lambda value: value.startswith('course-block__link'))
+        info_block = course.find(class_=re.compile('^course-block__link'))
         name = info_block.find(class_='course-block__title').get_text()
-        desc = info_block.find(class_='course-block__description').get_text().strip()
+        desc = info_block.find(class_='course-block__description').get_text(strip=True)
         link = 'https://www.datacamp.com' + info_block.get('href')
-        tech_tag = info_block.find('div', class_=lambda value: value.startswith('course-block__technology'))
-        technology = tech_tag.get('class')[1].replace('course-block__technology','').replace('-','')
+        technology_tag = info_block.find('div', class_=re.compile('^course-block__technology'))
+        technology = technology_tag.get('class')[1].replace('course-block__technology--','')
         data_id = int(info_block.parent.parent.get('data-id'))
+        time = course.find(class_=re.compile('^course-block__length')).get_text(strip=True)
+        try:
+            author = course.find(class_='course-block__author-name').get_text()
+        except AttributeError:
+            author = ''
 
-        data[data_id] = [name, technology, desc, link]
+        data[data_id] = [name, technology, desc, link, time, author]
 
-    return pd.DataFrame.from_dict(data, orient='index', columns=['Name', 'Technology', 'Description', 'Link'])
+    cols = ['Name', 'Technology', 'Description', 'Link', 'Time', 'Author']
+
+    return pd.DataFrame.from_dict(data, orient='index', columns=cols)
 
 
 def update_progress():
