@@ -5,13 +5,22 @@ from bs4 import BeautifulSoup
 import re
 
 
-def _get_courses():
+class ScrapeError(Exception):
+    pass
+
+
+def _get_courses_page_content():
     page = requests.get('https://www.datacamp.com/courses/all')
     status = str(page.status_code)
     print('Status: ' + status)
     if status != '200':
-        return
-    soup = BeautifulSoup(page.content, 'html.parser')
+        raise ScrapeError(f"Page request returned bad status: {status}")
+    else:
+        return page.content
+
+
+def _get_courses(content):
+    soup = BeautifulSoup(content, 'html.parser')
     courses_explore_section = soup.find(class_=re.compile('^courses__explore'))
     course_blocks = courses_explore_section.find_all(class_='course-block')
     print(f'{len(course_blocks)} courses found')
@@ -36,6 +45,48 @@ def _get_courses():
     cols = ['Name', 'Technology', 'Description', 'Link', 'Time', 'Author']
 
     return pd.DataFrame.from_dict(data, orient='index', columns=cols)
+
+
+def _get_topics(content):
+    soup = BeautifulSoup(content, 'html.parser')
+    topic_blocks = soup.find_all(class_='courses__topic')
+    print(f'{len(topic_blocks)} topics found')
+
+    topics = []
+    for topic in topic_blocks:
+        link = 'https://www.datacamp.com' + topic.find(class_='courses__topic-link').get('href')
+        title = topic.find(class_='courses__topic-title').get_text()
+
+        topics.append((title, link))
+
+    return topics
+
+
+def _get_courses_by_topic(topics):
+
+    courses_by_topic = {}
+
+    for topic in topics:
+        topic_name, link = topic
+        page = requests.get(link)
+        status = str(page.status_code)
+        print('Status: ' + status)
+        if status != '200':
+            raise ScrapeError("Page request returned bad status.")
+
+        soup = BeautifulSoup(page.content, 'html.parser')
+        courses_explore_section = soup.find(class_=re.compile('^courses__explore'))
+        course_blocks = courses_explore_section.find_all(class_='course-block')
+
+        course_names = []
+        for course in course_blocks:
+            info_block = course.find(class_=re.compile('^course-block__link'))
+            name = info_block.find(class_='course-block__title').get_text()
+            course_names.append(name)
+
+        courses_by_topic[topic_name] = course_names
+
+    return courses_by_topic
 
 
 def update_progress():
@@ -103,11 +154,15 @@ def delete_all_cards(client=_get_tclient()):
 
 
 def main():
+    content = _get_courses_page_content()
+    courses = _get_courses(content)
+    topics = _get_topics(content)
+    courses_by_topic = _get_courses_by_topic(topics)
+    courses['Topic'] = courses['Name'].map(
+        {course: topic for (topic, courses) in courses_by_topic.items() for course in courses})
     # delete_all_cards()
     # populate_all_courses()
     # update_progress()
-    # _get_courses()
-    exit(0)
 
 
 if __name__ == '__main__':
