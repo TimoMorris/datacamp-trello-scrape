@@ -4,6 +4,31 @@ from trello import TrelloClient
 from bs4 import BeautifulSoup
 import re
 
+TOPIC_GROUPS = {
+    "Programming": [
+        "Programming",
+    ],
+    "Data": [
+        "Importing & Cleaning Data",
+        "Data Manipulation",
+        "Data Visualization",
+    ],
+    "Probability & Statistics": [
+        "Probability & Statistics",
+    ],
+    "Machine Learning": [
+        "Machine Learning",
+    ],
+    "Applied": [
+        "Applied Finance",
+        "Reporting",
+        "Case Studies",
+    ],
+    "Other": [
+        "Other",
+    ],
+}
+
 
 class ScrapeError(Exception):
     pass
@@ -18,7 +43,7 @@ def _get_page_soup(url):
         return BeautifulSoup(page.content, 'html.parser')
 
 
-def _get_courses(soup):
+def _scrape_courses(soup):
     courses_explore_section = soup.find(class_=re.compile('^courses__explore'))
     course_blocks = courses_explore_section.find_all(class_='course-block')
     print(f'{len(course_blocks)} courses found')
@@ -45,7 +70,7 @@ def _get_courses(soup):
     return pd.DataFrame.from_dict(data, orient='index', columns=cols)
 
 
-def _get_topics(soup):
+def _scrape_topics(soup):
     topic_blocks = soup.find_all(class_='courses__topic')
     print(f'{len(topic_blocks)} topics found')
 
@@ -78,6 +103,26 @@ def _get_courses_by_topic(topics):
         courses_by_topic[topic] = course_names
 
     return courses_by_topic
+
+
+def _get_list_name(technology, group):
+    if technology.lower() not in ['python', 'r']:
+        return "Other"
+    else:
+        return f"{group.title()} - {technology.title()}"
+
+
+def get_courses():
+    all_courses_soup = _get_page_soup('https://www.datacamp.com/courses/all')
+    courses = _scrape_courses(all_courses_soup)
+    topics = _scrape_topics(all_courses_soup)
+    courses_by_topic = _get_courses_by_topic(topics)
+    courses['Topic'] = courses['Name'].map(
+        {course: topic for (topic, courses) in courses_by_topic.items() for course in courses})
+    courses['Group'] = courses['Topic'].map(
+        {topic: group for (group, topics) in TOPIC_GROUPS.items() for topic in topics})
+    courses['List'] = courses.apply(lambda row: _get_list_name(row['Technology'], row['Group']), axis='columns')
+    return courses
 
 
 def update_progress():
@@ -129,7 +174,7 @@ def populate_all_courses(client=_get_tclient()):
         else:
             other_list = L
 
-    for index, row in _get_courses().iterrows():
+    for index, row in _scrape_courses(_get_page_soup('https://www.datacamp.com/courses/all')).iterrows():
         print(index)
         _add_card(python_list, r_list, other_list, row, dc_courses_board)
 
@@ -145,12 +190,7 @@ def delete_all_cards(client=_get_tclient()):
 
 
 def main():
-    all_courses_soup = _get_page_soup('https://www.datacamp.com/courses/all')
-    courses = _get_courses(all_courses_soup)
-    topics = _get_topics(all_courses_soup)
-    courses_by_topic = _get_courses_by_topic(topics)
-    courses['Topic'] = courses['Name'].map(
-        {course: topic for (topic, courses) in courses_by_topic.items() for course in courses})
+    courses = get_courses()
     # delete_all_cards()
     # populate_all_courses()
     # update_progress()
