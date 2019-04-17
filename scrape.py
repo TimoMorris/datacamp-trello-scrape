@@ -9,18 +9,16 @@ class ScrapeError(Exception):
     pass
 
 
-def _get_courses_page_content():
-    page = requests.get('https://www.datacamp.com/courses/all')
+def _get_page_soup(url):
+    page = requests.get(url)
     status = str(page.status_code)
-    print('Status: ' + status)
     if status != '200':
         raise ScrapeError(f"Page request returned bad status: {status}")
     else:
-        return page.content
+        return BeautifulSoup(page.content, 'html.parser')
 
 
-def _get_courses(content):
-    soup = BeautifulSoup(content, 'html.parser')
+def _get_courses(soup):
     courses_explore_section = soup.find(class_=re.compile('^courses__explore'))
     course_blocks = courses_explore_section.find_all(class_='course-block')
     print(f'{len(course_blocks)} courses found')
@@ -47,8 +45,7 @@ def _get_courses(content):
     return pd.DataFrame.from_dict(data, orient='index', columns=cols)
 
 
-def _get_topics(content):
-    soup = BeautifulSoup(content, 'html.parser')
+def _get_topics(soup):
     topic_blocks = soup.find_all(class_='courses__topic')
     print(f'{len(topic_blocks)} topics found')
 
@@ -66,17 +63,11 @@ def _get_courses_by_topic(topics):
 
     courses_by_topic = {}
 
-    for topic in topics:
-        topic_name, link = topic
-        page = requests.get(link)
-        status = str(page.status_code)
-        print('Status: ' + status)
-        if status != '200':
-            raise ScrapeError("Page request returned bad status.")
-
-        soup = BeautifulSoup(page.content, 'html.parser')
+    for (topic, link) in topics:
+        soup = _get_page_soup(link)
         courses_explore_section = soup.find(class_=re.compile('^courses__explore'))
         course_blocks = courses_explore_section.find_all(class_='course-block')
+        print(f'{topic}: {len(course_blocks)} courses found')
 
         course_names = []
         for course in course_blocks:
@@ -84,7 +75,7 @@ def _get_courses_by_topic(topics):
             name = info_block.find(class_='course-block__title').get_text()
             course_names.append(name)
 
-        courses_by_topic[topic_name] = course_names
+        courses_by_topic[topic] = course_names
 
     return courses_by_topic
 
@@ -154,9 +145,9 @@ def delete_all_cards(client=_get_tclient()):
 
 
 def main():
-    content = _get_courses_page_content()
-    courses = _get_courses(content)
-    topics = _get_topics(content)
+    all_courses_soup = _get_page_soup('https://www.datacamp.com/courses/all')
+    courses = _get_courses(all_courses_soup)
+    topics = _get_topics(all_courses_soup)
     courses_by_topic = _get_courses_by_topic(topics)
     courses['Topic'] = courses['Name'].map(
         {course: topic for (topic, courses) in courses_by_topic.items() for course in courses})
