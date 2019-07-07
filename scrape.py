@@ -35,15 +35,45 @@ class ScrapeError(Exception):
 
 
 def _get_page_soup(url):
+    """Get HTML soup of the page at the URL.
+
+    Args:
+        url: page to be scraped
+
+    Returns:
+        BeautifulSoup: HTML soup of the requested page
+
+    Raises:
+        ScrapeError: if page request returns bad status
+
+    """
     page = requests.get(url)
-    status = str(page.status_code)
-    if status != '200':
+    status = page.status_code
+    if status != 200:
         raise ScrapeError(f"Page request returned bad status: {status}")
     else:
         return BeautifulSoup(page.content, 'html.parser')
 
 
 def _scrape_courses(soup):
+    """Extract list of courses with info from HTML soup.
+
+    Args:
+        soup: HTML soup of page with courses info
+
+    Returns:
+        pd.DataFrame: course info in a DataFrame.
+            Each row is a course, with DataCamp ID as index,
+            and columns:
+
+            * Name
+            * Technology
+            * Description
+            * Link
+            * Time
+            * Author
+
+    """
     courses_explore_section = soup.find(class_=re.compile('^courses__explore'))
     course_blocks = courses_explore_section.find_all(class_='course-block')
     print(f'{len(course_blocks)} courses found')
@@ -63,7 +93,7 @@ def _scrape_courses(soup):
         except AttributeError:
             author = ''
 
-        data[data_id] = [name, technology, desc, link, time, author]
+        data[data_id] = (name, technology, desc, link, time, author)
 
     cols = ['Name', 'Technology', 'Description', 'Link', 'Time', 'Author']
 
@@ -71,6 +101,16 @@ def _scrape_courses(soup):
 
 
 def _scrape_topics(soup):
+    """Extract list of topics with links from HTML soup.
+
+    Args:
+        soup: HTML soup of page with topics
+
+    Returns:
+        list: of tuples, each corresponding to a topic, of the form:
+            (<Topic text title>, <URL of page of courses for that topic>)
+
+    """
     topic_blocks = soup.find_all(class_='courses__topic')
     print(f'{len(topic_blocks)} topics found')
 
@@ -85,6 +125,16 @@ def _scrape_topics(soup):
 
 
 def _get_courses_by_topic(topics):
+    """Get list of courses for each topic.
+
+    Args:
+        topics: list of topics, each as tuple of the form:
+            (<Topic name>, <URL of page of courses for that topic>)
+
+    Returns:
+        dict: mapping topic names to list of courses for that topic
+
+    """
 
     courses_by_topic = {}
 
@@ -106,13 +156,41 @@ def _get_courses_by_topic(topics):
 
 
 def _get_list_name(technology, group):
+    """Generate name of Trello list for the given course.
+
+    Args:
+        technology: technology the course pertains to
+        group: group the course is assigned to based on its topic
+
+    Returns:
+        str: name of Trello list the given course belongs to
+
+    """
     if technology.lower() not in ['python', 'r']:
         return "Other"
     else:
-        return f"{group.title()} - {technology.title()}"
+        return f"{technology.title()} - {group.title()}"
 
 
 def get_courses():
+    """Get DataCamp courses info.
+
+    Returns:
+        pd.DataFrame: course info in a DataFrame.
+            Each row is a course, with DataCamp ID as index,
+            and columns:
+
+            * Name
+            * Technology
+            * Description
+            * Link
+            * Time
+            * Author
+            * Topic
+            * Group
+            * List
+
+    """
     all_courses_soup = _get_page_soup('https://www.datacamp.com/courses/all')
     courses = _scrape_courses(all_courses_soup)
     topics = _scrape_topics(all_courses_soup)
@@ -133,9 +211,10 @@ def _get_tclient(creds='api.xml'):
     hand = open(creds).read()
     soup = BeautifulSoup(hand, 'lxml')
     client = TrelloClient(
-            api_key=soup.find('key').get_text(),
-            api_secret=soup.find('secret').get_text(),
-            token=soup.find('token').get_text())
+        api_key=soup.find('key').get_text(),
+        api_secret=soup.find('secret').get_text(),
+        token=soup.find('token').get_text(),
+    )
     return client
 
 
