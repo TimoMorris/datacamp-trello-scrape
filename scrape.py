@@ -3,6 +3,7 @@ import pandas as pd
 from trello import TrelloClient
 from bs4 import BeautifulSoup
 import re
+from collections import Counter
 
 TOPIC_GROUPS = {
     "Programming": [
@@ -25,12 +26,17 @@ TOPIC_GROUPS = {
         "Case Studies",
     ],
     "Other": [
+        "Management",
         "Other",
     ],
 }
 
 
 class ScrapeError(Exception):
+    pass
+
+
+class TopicGroupsError(Exception):
     pass
 
 
@@ -155,6 +161,44 @@ def _get_courses_by_topic(topics):
     return courses_by_topic
 
 
+def _validate_topic_groups(topic_groups, topics):
+    """Verify that the topic groups include each topic, and only once.
+
+    Args:
+        topic_groups: groupings of topics,
+            dict mapping group name to list of topics
+        topics: list of topics found in scraping process
+
+    Raises:
+        TopicGroupsError: if topic appears in more than one group,
+            or a topic is not assigned to a group
+
+    """
+    errors = []
+    known_topics = [
+        t for (group, topics) in topic_groups.items() for t in topics
+    ]
+
+    freqs = Counter(known_topics)
+    more_than_once = [topic for (topic, freq) in freqs.items() if freq > 1]
+    if more_than_once:
+        errors.append(
+            f"- topic(s) assigned to more than one group: "
+            f"{', '.join(more_than_once)}"
+        )
+
+    missing_topics = [t for t in topics if t not in known_topics]
+    if missing_topics:
+        errors.append(
+            f"- topic(s) not assigned to a group: {', '.join(missing_topics)}"
+        )
+
+    if errors:
+        msg = "Topic groups not valid due to following issue(s):\n"
+        msg += "\n".join(errors)
+        raise TopicGroupsError(msg)
+
+
 def _get_list_name(technology, group):
     """Generate name of Trello list for the given course.
 
@@ -197,6 +241,7 @@ def get_courses():
     courses_by_topic = _get_courses_by_topic(topics)
     courses['Topic'] = courses['Name'].map(
         {course: topic for (topic, courses) in courses_by_topic.items() for course in courses})
+    _validate_topic_groups(TOPIC_GROUPS, [t for (t, l) in topics])
     courses['Group'] = courses['Topic'].map(
         {topic: group for (group, topics) in TOPIC_GROUPS.items() for topic in topics})
     courses['List'] = courses.apply(lambda row: _get_list_name(row['Technology'], row['Group']), axis='columns')
